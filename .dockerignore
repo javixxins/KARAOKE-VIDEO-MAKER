@@ -1,0 +1,9 @@
+backend/venv/
+backend/data/
+backend/server.log
+Karaoke Video Maker.app/
+.git/
+.DS_Store
+*.log
+__pycache__/
+*.pyc
