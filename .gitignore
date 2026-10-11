@@ -1,0 +1,22 @@
+# Entorno virtual de Python (se recrea con requirements.txt, no se versiona)
+backend/venv/
+
+# Datos de usuario generados en local (audios/videos subidos, proyectos, salidas)
+backend/data/uploads/
+backend/data/projects/
+backend/data/output/
+
+# Logs
+backend/server.log
+*.log
+
+# Basura de macOS
+.DS_Store
+
+# Modelos de IA descargados (faster-whisper los descarga solo, no hace falta subirlos)
+backend/.cache/
+~/.cache/huggingface/
+
+# Python
+__pycache__/
+*.pyc

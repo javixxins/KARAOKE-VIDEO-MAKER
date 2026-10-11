@@ -1,0 +1,138 @@
+#!/bin/bash
+# Este proceso principal debe volver casi al instante: si se queda esperando
+# demasiado tiempo, macOS/LaunchServices lo da por "no responde". Pero
+# ademas, en cuanto este ejecutable termina, macOS (RunningBoard) da por
+# finalizada toda la "app" y mata cualquier proceso en segundo plano que
+# hubiera lanzado desde aqui mismo (nohup+disown NO basta: eso solo protege
+# de SIGHUP, no de que el sistema limpie el grupo de procesos de la app al
+# cerrarse). Por eso el servidor en si se arranca como un trabajo de
+# "launchd" (gui/<uid>), independiente del ciclo de vida de esta app.
+#
+# IMPORTANTE: una vez registrado el trabajo, nunca se vuelve a des-registrar
+# ("bootout") en el uso normal — solo se comprueba si esta corriendo y, si
+# no, se reanuda ("kickstart"). Versiones anteriores de este lanzador hacian
+# bootout+bootstrap en cada clic y eso demostro ser poco fiable (de vez en
+# cuando falla con un error interno de launchd); con bootstrap-una-vez +
+# kickstart-para-reanudar no hace falta volver a tocar el registro nunca mas.
+#
+# El python del venv (instalado por Homebrew) tampoco tiene firma de codigo,
+# y launchd rechaza arrancar directamente un binario sin firmar
+# ("Operation not permitted"). Por eso el programa del trabajo es /bin/bash
+# (firmado por Apple), que luego hace "exec" del python real — launchd solo
+# valida el bash inicial.
+
+BACKEND="/Users/franantartico/Documents/DARESB/APLICACIÓN VIDEOS MUSICALES/backend"
+PORT=8008
+
+/usr/bin/python3 - "$BACKEND" "$PORT" <<'PYEOF'
+import os, plistlib, shlex, subprocess, sys, time
+
+backend, port = sys.argv[1], sys.argv[2]
+url = f"http://127.0.0.1:{port}"
+log = os.path.join(backend, "server.log")
+uid = os.getuid()
+
+server_label = "com.daresb.karaokevideomaker.server"
+la_dir = os.path.expanduser("~/Library/LaunchAgents")
+os.makedirs(la_dir, exist_ok=True)
+server_plist = os.path.join(la_dir, f"{server_label}.plist")
+
+venv_python = os.path.join(backend, "venv", "bin", "python")
+server_cmd = (
+    f"exec {shlex.quote(venv_python)} -m uvicorn app.main:app "
+    f"--host 127.0.0.1 --port {port}"
+)
+
+if not os.path.exists(server_plist):
+    with open(server_plist, "wb") as f:
+        plistlib.dump({
+            "Label": server_label,
+            "ProgramArguments": ["/bin/bash", "-c", server_cmd],
+            "WorkingDirectory": backend,
+            "RunAtLoad": True,
+            "KeepAlive": False,
+            # launchd arranca los LaunchAgents con un PATH minimo (sin
+            # /usr/local/bin ni /opt/homebrew/bin), asi que sin esto ffmpeg
+            # no encuentra "ffmpeg"/"ffprobe" y cualquier subida de
+            # audio/video falla con 500.
+            "EnvironmentVariables": {
+                "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            },
+            "StandardOutPath": log,
+            "StandardErrorPath": log,
+        }, f)
+
+
+def run(*args):
+    return subprocess.run(["launchctl", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+
+
+def is_up():
+    r = subprocess.run(
+        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "2", f"{url}/api/presets"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    return r.stdout.strip() == b"200"
+
+
+def is_loaded(label):
+    return run("print", f"gui/{uid}/{label}") == 0
+
+
+if not is_up():
+    if not is_loaded(server_label):
+        run("bootstrap", f"gui/{uid}", server_plist)
+    else:
+        # Cargado pero no respondiendo (p.ej. se paro o lo mataron): se
+        # reanuda sin tener que volver a registrarlo.
+        run("kickstart", "-p", f"gui/{uid}/{server_label}")
+
+# Espera acotada (pocos segundos) a que el servidor responda, y abre el
+# navegador — todo en este mismo proceso, sin delegarlo a otro trabajo de
+# launchd: ya no hace falta, porque el servidor en si sobrevive solo.
+ok = False
+for _ in range(8):
+    if is_up():
+        ok = True
+        break
+    time.sleep(1)
+
+if ok:
+    subprocess.Popen(["open", url])
+else:
+    # Puede que la primera vez que se registra el trabajo tarde un poco mas
+    # en ser aceptado por el sistema: un ultimo intento antes de rendirse.
+    run("kickstart", "-p", f"gui/{uid}/{server_label}")
+    for _ in range(8):
+        if is_up():
+            ok = True
+            break
+        time.sleep(1)
+    if ok:
+        subprocess.Popen(["open", url])
+    else:
+        # No usar osascript/"display dialog" aqui: ese proceso quedaria
+        # colgado en primer plano hasta que alguien pulse "OK", y mientras
+        # tanto macOS considera que esta app "sigue abierta" (es su proceso
+        # principal) — los siguientes clics en el icono fallan con un
+        # timeout intentando reactivar esa instancia colgada en vez de
+        # arrancar una nueva. Esto paso de verdad durante las pruebas y dejo
+        # la app inutilizable hasta matar el proceso a mano. "open" en
+        # cambio solo le pide al sistema (launchservicesd) que abra algo —
+        # no deja un hijo nuestro corriendo — por eso es seguro usarlo
+        # tambien para mostrar el aviso de error.
+        error_html = "/tmp/karaoke_video_maker_error.html"
+        with open(error_html, "w") as f:
+            f.write(
+                "<!doctype html><meta charset='utf-8'>"
+                "<title>Karaoke Video Maker</title>"
+                "<body style='font-family:-apple-system,sans-serif;max-width:560px;"
+                "margin:60px auto;line-height:1.5;color:#222'>"
+                "<h2>No se ha podido arrancar Karaoke Video Maker</h2>"
+                f"<p>Revisa el archivo <code>{log}</code> para mas detalles, "
+                "o intenta hacer clic en el icono otra vez.</p></body>"
+            )
+        subprocess.Popen(["open", error_html])
+PYEOF
+
+exit 0

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Karaoke Video Maker</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>🎤 Karaoke Video Maker</h1>
+  <nav id="stepNav" class="stepnav"></nav>
+</header>
+
+<main id="app">
+
+  <!-- PASO 1: AUDIO -->
+  <section class="step" id="step-audio" data-step="audio">
+    <h2>1. Sube el audio (MP3)</h2>
+    <p class="hint">Sube la canción. Detectaremos automáticamente la letra y el ritmo para el karaoke.</p>
+    <div class="panel">
+      <h3 style="margin-top:0">¿Ya tenías un proyecto guardado?</h3>
+      <p class="hint" style="margin-top:-4px">Carga el archivo de proyecto (.kvmproj) que guardaste antes para seguir exactamente donde lo dejaste.</p>
+      <input type="file" id="loadProjectInput" accept=".kvmproj,.zip" hidden>
+      <button id="btnLoadProject" class="btn secondary">📂 Cargar proyecto</button>
+      <div id="loadProjectStatus" class="status hidden"></div>
+    </div>
+    <div class="panel">
+      <label>Calidad de la detección automática
+        <select id="transcribeQuality">
+          <option value="fast">Rápida (recomendada para empezar)</option>
+          <option value="precise">Precisa (más lenta — modelo de IA más grande; pruébala si la rápida no sincroniza bien, sobre todo en canciones)</option>
+        </select>
+      </label>
+    </div>
+    <div class="dropzone" id="audioDrop">
+      <input type="file" id="audioInput" accept=".mp3,.wav,.m4a,.aac,.ogg" hidden>
+      <p>Arrastra tu MP3 aquí o haz clic para elegir el archivo</p>
+    </div>
+    <div id="audioInfo" class="info-box hidden"></div>
+    <audio id="audioPlayer" controls class="hidden" style="width:100%"></audio>
+    <div id="transcribeStatus" class="status hidden"></div>
+    <div class="actions">
+      <button id="btnToMedia" class="btn primary" disabled>Siguiente: subir video/imagen →</button>
+    </div>
+  </section>
+
+  <!-- PASO 2: MEDIA -->
+  <section class="step hidden" id="step-media" data-step="media">
+    <h2>2. Sube un video o imágenes</h2>
+    <div class="panel">
+      <label>Formato de salida (elígelo antes de colocar el vídeo/fotos, así el encuadre se ajusta ya al tamaño final)
+        <select id="formatPresetSelect"></select>
+      </label>
+      <div id="formatCustomDims" class="hidden">
+        <label>Ancho <input type="number" id="formatCustomWidth" step="2" min="100"></label>
+        <label>Alto <input type="number" id="formatCustomHeight" step="2" min="100"></label>
+      </div>
+    </div>
+    <p class="hint">Puedes subir un único vídeo, o una o varias fotos (se mostrarán en secuencia tipo slideshow).</p>
+    <div class="tabs">
+      <button class="tab active" data-mediakind="video">Vídeo</button>
+      <button class="tab" data-mediakind="images">Imágenes</button>
+    </div>
+    <div class="dropzone" id="mediaDrop">
+      <input type="file" id="mediaInput" accept=".mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png,.webp" hidden>
+      <p id="mediaDropText">Arrastra tu vídeo aquí o haz clic para elegir el archivo</p>
+    </div>
+    <div id="mediaFrameAdjust"></div>
+    <div class="actions">
+      <button class="btn secondary" data-back="audio">← Atrás</button>
+      <button id="btnToLyrics" class="btn primary" disabled>Siguiente: editar letra →</button>
+    </div>
+  </section>
+
+  <!-- PASO 3: LETRA -->
+  <section class="step hidden" id="step-lyrics" data-step="lyrics">
+    <h2>3. Revisa y corrige la letra</h2>
+    <p class="hint">La letra se detectó automáticamente con sus tiempos. Escucha el audio mientras corriges el texto o los tiempos (en segundos).</p>
+
+    <div class="panel">
+      <label class="checkline"><input type="checkbox" id="lyricsDisabled"> Este vídeo no necesita letra (sin subtítulos de karaoke)</label>
+      <p class="hint" style="margin-top:6px; margin-bottom:0">Si lo marcas, la previsualización y el vídeo final se generan sin letra — puedes seguir adelante sin detectar ni escribir nada.</p>
+    </div>
+
+    <div id="lyricsNoneNotice" class="info-box hidden">
+      Este vídeo se exportará sin letra/subtítulos. Desmarca la casilla de arriba si cambias de opinión.
+    </div>
+
+    <div id="lyricsEditArea">
+    <audio id="audioPlayerLyrics" controls class="hidden" style="width:100%; margin-bottom:14px"></audio>
+
+    <div id="timelineWorkspace" class="timeline-workspace panel">
+      <div class="timeline-workspace-head">
+        <div>
+          <h3 style="margin-top:0">Línea de tiempo — arrastra las palabras para ajustarlas</h3>
+          <p class="hint" style="margin-top:-4px">
+            Haz clic en una palabra para seleccionarla (Shift/Ctrl+clic para varias) y arrastra para moverla; arrastra varias
+            seleccionadas desde el banco de palabras para colocarlas todas de golpe. Arrastra el borde izquierdo o derecho
+            de una palabra para alargarla o acortarla. Clic <b>derecho</b> sobre una palabra la copia; clic <b>izquierdo</b>
+            en la línea de tiempo la pega ahí (Esc cancela la copia). Mantén pulsada la <b>barra espaciadora</b> y arrastra
+            con el <b>botón derecho</b> para desplazar la vista, y usa la <b>rueda del ratón</b> para acercar/alejar el zoom.
+            Los cambios se guardan solos.
+          </p>
+        </div>
+        <button id="btnTimelineExpand" class="btn secondary" title="Ampliar a pantalla completa">⛶ Ampliar espacio de trabajo</button>
+      </div>
+
+      <div class="actions" style="justify-content:flex-start; margin-top:0; gap:8px; flex-wrap:wrap">
+        <button id="btnTimelineBack" class="btn secondary" title="Retroceder 2s">⏪ 2s</button>
+        <button id="btnTimelinePlay" class="btn secondary">▶ Reproducir</button>
+        <button id="btnTimelineStop" class="btn secondary" title="Detener y volver al inicio">⏹ Detener</button>
+        <button id="btnTimelineForward" class="btn secondary" title="Avanzar 2s">2s ⏩</button>
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin:0">🔎−
+          <input type="range" id="timelineZoom" min="0" max="1000" value="719" style="width:140px">
+          🔎+
+        </label>
+        <button id="btnTimelineFitAll" class="btn secondary" title="Ver toda la canción de un vistazo">↔ Ver toda la canción</button>
+        <button id="btnTimelineZoomDetail" class="btn secondary" title="Acercar para ajustar con precisión">🔍 Ver detalle</button>
+        <span id="timelineClock" style="color:var(--muted);font-size:12px">0:00 / 0:00</span>
+      </div>
+      <div class="actions" style="justify-content:flex-start; margin-top:8px; gap:8px; flex-wrap:wrap">
+        <button id="btnTimelineSelectAll" class="btn secondary">☑ Seleccionar todas</button>
+        <button id="btnTimelineClearSelection" class="btn secondary">Deseleccionar</button>
+        <button id="btnTimelineDeleteSelected" class="btn danger" title="Las quita de la línea de tiempo, pero sigue estando en el banco de palabras y en la tabla para volver a colocarlas">🗑 Quitar de la línea de tiempo</button>
+        <span id="timelineSelectionInfo" style="color:var(--muted); font-size:12px"></span>
+      </div>
+      <div id="wordTimelineScroll" class="word-timeline-scroll">
+        <div id="wordTimelineInner" class="word-timeline-inner">
+          <div id="timelineRuler" class="timeline-ruler"></div>
+          <div id="timelineWordsTrack" class="timeline-words-track"></div>
+          <div id="timelinePlayhead" class="timeline-playhead"></div>
+        </div>
+      </div>
+      <div id="autoSaveIndicator" class="status hidden" style="margin-top:10px"></div>
+
+      <h3>Banco de palabras (una fila por cada línea de la canción)</h3>
+      <p class="hint" style="margin-top:-4px">Arrastra cualquier palabra de aquí directamente a la posición correcta en la línea de tiempo de arriba. Útil cuando una palabra está muy desubicada y es más fácil encontrarla leyendo la letra que buscándola en la línea de tiempo.</p>
+      <div id="wordBank" class="word-bank"></div>
+
+      <div class="timeline-workspace-foot">
+        <button id="btnTimelineCollapse" class="btn secondary hidden">✕ Cerrar espacio de trabajo</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <label>¿Tienes la letra correcta a mano? Súbela en un .txt o pégala abajo (una línea por línea de la canción) y la ajustaremos a los tiempos ya detectados, dando prioridad al texto que escribas.
+        <input type="file" id="lyricsTxtInput" accept=".txt" hidden>
+      </label>
+      <button id="btnImportTxt" class="btn secondary">📄 Subir letra (.txt)</button>
+      <textarea id="lyricsPasteText" rows="5" style="width:100%; margin-top:10px; resize:vertical" placeholder="O pega aquí la letra completa, tal y como se canta..."></textarea>
+      <div class="actions" style="margin-top:8px; justify-content:flex-start">
+        <button id="btnImportPastedText" class="btn secondary">🔎 Analizar y alinear este texto</button>
+      </div>
+      <div id="importTxtStatus" class="status hidden"></div>
+    </div>
+
+    <div class="panel">
+      <label>¿La letra va siempre adelantada o retrasada respecto a la canción? Desplaza TODOS los tiempos a la vez (en segundos; negativo = adelantar la letra, positivo = retrasarla) en vez de corregir palabra por palabra.</label>
+      <div class="actions" style="justify-content:flex-start; margin-top:0; gap:8px">
+        <button id="btnShiftMinus" class="btn secondary">− 0.5s</button>
+        <input type="number" id="shiftAmount" value="0" step="0.1" style="width:90px">
+        <button id="btnShiftPlus" class="btn secondary">+ 0.5s</button>
+        <button id="btnApplyShift" class="btn secondary">↔ Aplicar desplazamiento</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <label>Añade un título o texto suelto en el punto del vídeo que quieras (independiente de la letra detectada)
+        <input type="text" id="titleText" placeholder="Texto a mostrar..." style="width:100%; margin-top:4px">
+      </label>
+      <div class="actions" style="justify-content:flex-start; margin-top:0; gap:8px; flex-wrap:wrap">
+        <label style="margin:0">Inicio (s) <input type="number" id="titleStart" value="0" min="0" step="0.1" style="width:90px"></label>
+        <label style="margin:0">Duración (s) <input type="number" id="titleDuration" value="2" min="0.2" step="0.1" style="width:90px"></label>
+        <button id="btnAddTitle" class="btn secondary">+ Añadir a la línea de tiempo</button>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-bottom:10px; flex-wrap:wrap">
+      <span style="display:flex; align-items:center; gap:8px">
+        <button id="btnRetranscribe" class="btn secondary">🔄 Volver a detectar letra</button>
+        <select id="retranscribeQuality" style="width:auto">
+          <option value="fast">con modelo rápido</option>
+          <option value="precise">con modelo preciso (más lento)</option>
+        </select>
+      </span>
+      <button id="btnAddWord" class="btn secondary">+ Añadir palabra</button>
+      <button id="btnDeleteAllWords" class="btn danger">🗑 Borrar toda la letra</button>
+      <button id="btnSaveLyrics" class="btn primary">💾 Guardar letra</button>
+    </div>
+    <div id="lyricsStatus" class="status hidden"></div>
+    <div id="lyricsTableWrap" class="table-wrap">
+      <table id="lyricsTable">
+        <thead><tr><th>Palabra</th><th>Inicio (s)</th><th>Fin (s)</th><th>Salto de línea</th><th></th></tr></thead>
+        <tbody id="lyricsBody"></tbody>
+      </table>
+    </div>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" data-back="media">← Atrás</button>
+      <button id="btnToStyle" class="btn primary">Siguiente: estilo del karaoke →</button>
+    </div>
+  </section>
+
+  <!-- PASO 4: ESTILO -->
+  <section class="step hidden" id="step-style" data-step="style">
+    <h2>4. Configura el estilo del karaoke</h2>
+    <div class="grid2">
+      <div class="panel">
+        <label>Fuente
+          <select id="styleFont"></select>
+        </label>
+        <label>Tamaño de letra <span id="fontSizeVal"></span>
+          <input type="range" id="styleFontSize" min="24" max="140" step="2">
+        </label>
+        <label>Color activo (cantado)
+          <input type="color" id="stylePrimary">
+        </label>
+        <label>Color no cantado
+          <input type="color" id="styleSecondary">
+        </label>
+        <label>Color de borde
+          <input type="color" id="styleOutline">
+        </label>
+        <label>Grosor de borde <span id="outlineWidthVal"></span>
+          <input type="range" id="styleOutlineWidth" min="0" max="10" step="1">
+        </label>
+        <label>Posición
+          <select id="stylePosition">
+            <option value="bottom">Abajo</option>
+            <option value="center">Centro</option>
+            <option value="top">Arriba</option>
+          </select>
+        </label>
+        <label>Efecto de animación
+          <select id="styleAnimation">
+            <option value="fill">Barrido suave</option>
+            <option value="hard">Resaltado directo</option>
+            <option value="pop">Rebote (pop)</option>
+          </select>
+        </label>
+        <label class="checkline"><input type="checkbox" id="styleUppercase"> MAYÚSCULAS</label>
+        <label class="checkline"><input type="checkbox" id="styleBold"> Negrita</label>
+      </div>
+      <div class="panel preview-panel">
+        <canvas id="previewCanvas" class="preview-canvas" width="360" height="640"></canvas>
+        <div class="preview-controls">
+          <button id="btnPreviewPlay" class="btn secondary">▶ Previsualizar</button>
+          <input type="range" id="previewSeek" class="preview-seek" min="0" max="100" step="0.01" value="0" title="Arrastra para ir a cualquier punto de la canción">
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" data-back="lyrics">← Atrás</button>
+      <button id="btnToTimeline" class="btn primary">Siguiente: timeline y filtros →</button>
+    </div>
+  </section>
+
+  <!-- PASO 5: TIMELINE Y FILTROS -->
+  <section class="step hidden" id="step-timeline" data-step="timeline">
+    <h2>5. Timeline y filtros</h2>
+    <div id="timelineVideoPanel" class="panel hidden">
+      <h3>Recortar vídeo</h3>
+      <label>Inicio (s) <input type="number" id="trimStart" step="0.1" min="0"></label>
+      <label>Fin (s) <input type="number" id="trimEnd" step="0.1" min="0"></label>
+      <p class="hint">El encuadre (posición y tamaño dentro del lienzo) se ajusta en el paso 2, justo al subir el vídeo.</p>
+    </div>
+    <div id="timelineImagesPanel" class="panel hidden">
+      <h3>Duración de cada imagen (segundos)</h3>
+      <label class="checkline"><input type="checkbox" id="kenBurns"> Efecto Ken Burns (zoom/paneo suave)</label>
+      <p class="hint">El encuadre de cada foto se ajusta en el paso 2, justo al subirlas.</p>
+      <div id="imagesTimelineList"></div>
+    </div>
+    <div class="panel">
+      <h3>Filtro de color</h3>
+      <select id="filterSelect"></select>
+    </div>
+    <div class="panel preview-panel">
+      <h3 style="width:100%;text-align:left;margin-top:0">Vista previa</h3>
+      <canvas id="previewCanvasTimeline" class="preview-canvas" width="360" height="640"></canvas>
+      <div class="preview-controls">
+        <button id="btnPreviewPlayTimeline" class="btn secondary">▶ Previsualizar</button>
+        <input type="range" id="previewSeekTimeline" class="preview-seek" min="0" max="100" step="0.01" value="0" title="Arrastra para ir a cualquier punto de la canción">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" data-back="style">← Atrás</button>
+      <button id="btnToExport" class="btn primary">Siguiente: exportar →</button>
+    </div>
+  </section>
+
+  <!-- PASO 6: EXPORTAR -->
+  <section class="step hidden" id="step-export" data-step="export">
+    <h2>6. Exportar vídeo</h2>
+    <div class="panel">
+      <label>Formato de salida
+        <select id="exportPreset"></select>
+      </label>
+      <div id="customDims" class="hidden">
+        <label>Ancho <input type="number" id="customWidth" step="2" min="100"></label>
+        <label>Alto <input type="number" id="customHeight" step="2" min="100"></label>
+      </div>
+      <label>Calidad
+        <select id="exportQuality"></select>
+      </label>
+    </div>
+    <div class="panel">
+      <label class="checkline"><input type="checkbox" id="shortEnabled"> Crear también un Short/Reel corto</label>
+      <div id="shortOptions" class="hidden">
+        <label>Inicio del short (s) <input type="number" id="shortStart" min="0" step="0.5" value="0"></label>
+        <label>Duración del short (s) <input type="number" id="shortDuration" min="1" step="1" value="30"></label>
+        <p id="shortRangeHint" class="hint" style="margin-top:-4px"></p>
+        <label class="checkline"><input type="checkbox" id="shortFadeEnabled"> Fade-in / fade-out</label>
+        <label id="shortFadeDurationWrap" class="hidden">Duración del fade (s)
+          <select id="shortFadeDuration">
+            <option value="0.5">0.5s</option>
+            <option value="1" selected>1s</option>
+            <option value="1.5">1.5s</option>
+            <option value="2">2s</option>
+            <option value="3">3s</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="panel preview-panel">
+      <h3 style="width:100%;text-align:left;margin-top:0">Vista previa final</h3>
+      <canvas id="previewCanvasExport" class="preview-canvas" width="360" height="640"></canvas>
+      <div class="preview-controls">
+        <button id="btnPreviewPlayExport" class="btn secondary">▶ Previsualizar cómo quedará</button>
+        <input type="range" id="previewSeekExport" class="preview-seek" min="0" max="100" step="0.01" value="0" title="Arrastra para ir a cualquier punto de la canción">
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Guardar progreso</h3>
+      <p class="hint" style="margin-top:-4px">Guarda todo el proyecto (audio, vídeo/fotos, letra, estilo y ajustes) en un único archivo para poder seguir editándolo más adelante, eligiendo tú la carpeta donde se guarda.</p>
+      <button id="btnSaveProject" class="btn secondary">💾 Guardar proyecto</button>
+      <div id="saveProjectStatus" class="status hidden"></div>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" data-back="timeline">← Atrás</button>
+      <button id="btnRender" class="btn primary">🎬 Generar vídeo final</button>
+    </div>
+    <div id="renderStatus" class="status hidden"></div>
+    <div id="renderProgressWrap" class="progress-wrap hidden">
+      <div class="progress-track"><div id="renderProgressBar" class="progress-bar" style="width:0%"></div></div>
+      <div id="renderProgressPct" class="progress-pct">0%</div>
+    </div>
+    <div id="renderResult" class="result hidden"></div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
